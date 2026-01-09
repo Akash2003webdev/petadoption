@@ -1,22 +1,67 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { PetCard } from "@/components/pets/PetCard";
 import { Button } from "@/components/ui/button";
-import { pets } from "@/data/pets";
-import { Heart, ArrowRight } from "lucide-react";
+import { Heart, ArrowRight, Loader2 } from "lucide-react";
+import { supabase } from "@/supabaseClient";
 
 export default function Favorites() {
-  // In a real app, this would be persisted in localStorage or a database
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favoritePets, setFavoritePets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const favoritePets = pets.filter((pet) => favorites.includes(pet.id));
+  useEffect(() => {
+    fetchFavorites();
+  }, []);
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]
-    );
+  const fetchFavorites = async () => {
+    try {
+      const { data: favData, error: favError } = await supabase
+        .from('fav_pets')
+        .select('pet_id');
+
+      if (favError) throw favError;
+
+      if (favData && favData.length > 0) {
+        const petIds = favData.map((item) => item.pet_id);
+
+        const { data: petsData, error: petsError } = await supabase
+          .from('pets')
+          .select('*')
+          .in('id', petIds);
+
+        if (petsError) throw petsError;
+        setFavoritePets(petsData || []);
+      } else {
+        setFavoritePets([]);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleFavorite = async (id: string) => {
+    try {
+      const isCurrentlyFavorite = favoritePets.some(pet => pet.id === id);
+      
+      if (isCurrentlyFavorite) {
+        setFavoritePets(prev => prev.filter(pet => pet.id !== id));
+        
+        const { error } = await supabase
+          .from('fav_pets')
+          .delete()
+          .eq('pet_id', id);
+
+        if (error) {
+          fetchFavorites();
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   return (
@@ -34,7 +79,11 @@ export default function Favorites() {
             </p>
           </div>
 
-          {favoritePets.length > 0 ? (
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            </div>
+          ) : favoritePets.length > 0 ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {favoritePets.map((pet) => (
                 <PetCard

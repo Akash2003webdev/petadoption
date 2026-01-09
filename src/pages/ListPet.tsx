@@ -5,12 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { 
-  Upload, 
-  Check, 
-  ChevronRight, 
+import {
+  Upload,
+  Check,
+  ChevronRight,
   ChevronLeft,
   Camera,
   Dog,
@@ -20,11 +26,13 @@ import {
   FileText,
   User,
   CheckCircle2,
-  PawPrint
+  PawPrint,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { cities } from "@/data/pets";
+import { supabase } from "@/supabaseClient"; // Ensure you have this client setup
 
 const steps = [
   { id: 1, title: "Pet Info", icon: PawPrint },
@@ -37,6 +45,12 @@ export default function ListPet() {
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Loading state for upload
+
+  // We need to store the actual File objects for uploading, not just the preview URLs
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [previewImages, setPreviewImages] = useState<string[]>([]);
+
   const [formData, setFormData] = useState({
     petName: "",
     petType: "",
@@ -55,8 +69,6 @@ export default function ListPet() {
     organization: "",
   });
 
-  const [previewImages, setPreviewImages] = useState<string[]>([]);
-
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -64,18 +76,29 @@ export default function ListPet() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
+      const newFiles = Array.from(files);
+
+      // Update the File state for backend upload
+      setImageFiles((prev) => [...prev, ...newFiles].slice(0, 5));
+
+      // Existing preview logic
       const newPreviews: string[] = [];
-      Array.from(files).forEach((file) => {
+      newFiles.forEach((file) => {
         const reader = new FileReader();
         reader.onloadend = () => {
           newPreviews.push(reader.result as string);
-          if (newPreviews.length === files.length) {
+          if (newPreviews.length === newFiles.length) {
             setPreviewImages((prev) => [...prev, ...newPreviews].slice(0, 5));
           }
         };
         reader.readAsDataURL(file);
       });
     }
+  };
+
+  const removeImage = (index: number) => {
+    setPreviewImages((prev) => prev.filter((_, i) => i !== index));
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const nextStep = () => {
@@ -86,13 +109,91 @@ export default function ListPet() {
     if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Helper to upload images to Supabase Storage
+  const uploadImagesToSupabase = async () => {
+    const uploadedUrls: string[] = [];
+
+    for (const file of imageFiles) {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("pet-images") // Make sure this bucket exists in Supabase
+        .upload(filePath, file);
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data } = supabase.storage
+        .from("pet-images")
+        .getPublicUrl(filePath);
+
+      uploadedUrls.push(data.publicUrl);
+    }
+    return uploadedUrls;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitted(true);
-    toast({
-      title: "Pet Listed Successfully!",
-      description: "Your pet listing has been submitted for review. We'll notify you once it's approved.",
-    });
+    setIsLoading(true);
+
+    try {
+      // 1. Upload Images first
+      const imageUrls = await uploadImagesToSupabase();
+
+      // 2. Prepare Personality Array (convert string to array)
+      const personalityArray = formData.personality
+        .split(",")
+        .map((trait) => trait.trim())
+        .filter((trait) => trait !== "");
+
+      // 3. Insert into Supabase 'pets' table
+      const { error } = await supabase.from("pets").insert({
+        id: crypto.randomUUID(), // <--- FIX: Generating ID manually
+        name: formData.petName,
+        type: formData.petType,
+        breed: formData.breed,
+        age: formData.age,
+        gender: formData.gender,
+        location: formData.city,
+        city: formData.city,
+        image_url: imageUrls[0] || null, // Main image
+        images: imageUrls, // Array of all images
+        vaccinated: formData.vaccinated,
+        neutered: formData.neutered,
+        description: formData.description,
+        personality: personalityArray,
+        health_notes: formData.healthNotes,
+        listed_by: formData.contactName, // Storing contact name
+        status: "available",
+        listed_date: new Date().toISOString(),
+        age_category: "puppy",
+        compatibility:`{
+  "kids": true,
+  "apartment": true,
+  "otherPets": true
+}`
+      });
+
+      if (error) throw error;
+
+      setIsSubmitted(true);
+      toast({
+        title: "Pet Listed Successfully!",
+        description: "Your pet listing is now live on the platform.",
+      });
+    } catch (error: any) {
+      console.error("Error submitting pet:", error);
+      toast({
+        variant: "destructive",
+        title: "Submission Failed",
+        description: error.message || "Something went wrong. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isSubmitted) {
@@ -109,35 +210,39 @@ export default function ListPet() {
                 Thank You!
               </h1>
               <p className="text-lg text-muted-foreground mb-8">
-                Your pet listing for <strong>{formData.petName}</strong> has been submitted successfully. 
-                Our team will review it and publish it within 24-48 hours.
+                Your pet listing for <strong>{formData.petName}</strong> has
+                been submitted successfully.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button asChild>
                   <a href="/">Go to Home</a>
                 </Button>
-                <Button variant="outline" onClick={() => {
-                  setIsSubmitted(false);
-                  setCurrentStep(1);
-                  setFormData({
-                    petName: "",
-                    petType: "",
-                    breed: "",
-                    age: "",
-                    gender: "",
-                    city: "",
-                    vaccinated: false,
-                    neutered: false,
-                    description: "",
-                    personality: "",
-                    healthNotes: "",
-                    contactName: "",
-                    contactPhone: "",
-                    contactEmail: "",
-                    organization: "",
-                  });
-                  setPreviewImages([]);
-                }}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsSubmitted(false);
+                    setCurrentStep(1);
+                    setFormData({
+                      petName: "",
+                      petType: "",
+                      breed: "",
+                      age: "",
+                      gender: "",
+                      city: "",
+                      vaccinated: false,
+                      neutered: false,
+                      description: "",
+                      personality: "",
+                      healthNotes: "",
+                      contactName: "",
+                      contactPhone: "",
+                      contactEmail: "",
+                      organization: "",
+                    });
+                    setPreviewImages([]);
+                    setImageFiles([]);
+                  }}
+                >
                   List Another Pet
                 </Button>
               </div>
@@ -161,22 +266,27 @@ export default function ListPet() {
               List a Pet for Adoption
             </h1>
             <p className="text-lg text-muted-foreground">
-              Help a rescued pet find their forever home. Fill in the details below to create a listing.
+              Help a rescued pet find their forever home. Fill in the details
+              below to create a listing.
             </p>
           </div>
 
           {/* Progress Steps */}
           <div className="mb-12">
             <div className="flex items-center justify-between relative">
-              {/* Progress Line */}
               <div className="absolute left-0 right-0 top-6 h-0.5 bg-border" />
-              <div 
+              <div
                 className="absolute left-0 top-6 h-0.5 bg-primary transition-all duration-500"
-                style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
+                style={{
+                  width: `${((currentStep - 1) / (steps.length - 1)) * 100}%`,
+                }}
               />
-              
+
               {steps.map((step) => (
-                <div key={step.id} className="relative flex flex-col items-center">
+                <div
+                  key={step.id}
+                  className="relative flex flex-col items-center"
+                >
                   <div
                     className={cn(
                       "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 z-10",
@@ -194,7 +304,9 @@ export default function ListPet() {
                   <span
                     className={cn(
                       "mt-2 text-sm font-medium",
-                      currentStep >= step.id ? "text-foreground" : "text-muted-foreground"
+                      currentStep >= step.id
+                        ? "text-foreground"
+                        : "text-muted-foreground"
                     )}
                   >
                     {step.title}
@@ -213,7 +325,7 @@ export default function ListPet() {
                   <h2 className="text-2xl font-display font-bold text-foreground mb-6">
                     Basic Information
                   </h2>
-                  
+
                   <div className="grid sm:grid-cols-2 gap-6">
                     <div>
                       <Label htmlFor="petName">Pet's Name</Label>
@@ -221,7 +333,9 @@ export default function ListPet() {
                         id="petName"
                         placeholder="e.g., Bruno, Luna"
                         value={formData.petName}
-                        onChange={(e) => handleInputChange("petName", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("petName", e.target.value)
+                        }
                         required
                       />
                     </div>
@@ -229,7 +343,9 @@ export default function ListPet() {
                       <Label>Pet Type</Label>
                       <Select
                         value={formData.petType}
-                        onValueChange={(value) => handleInputChange("petType", value)}
+                        onValueChange={(value) =>
+                          handleInputChange("petType", value)
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />
@@ -262,7 +378,9 @@ export default function ListPet() {
                         id="breed"
                         placeholder="e.g., Labrador, Persian, Indie"
                         value={formData.breed}
-                        onChange={(e) => handleInputChange("breed", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("breed", e.target.value)
+                        }
                         required
                       />
                     </div>
@@ -272,7 +390,9 @@ export default function ListPet() {
                         id="age"
                         placeholder="e.g., 6 months, 2 years"
                         value={formData.age}
-                        onChange={(e) => handleInputChange("age", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("age", e.target.value)
+                        }
                         required
                       />
                     </div>
@@ -283,7 +403,9 @@ export default function ListPet() {
                       <Label>Gender</Label>
                       <Select
                         value={formData.gender}
-                        onValueChange={(value) => handleInputChange("gender", value)}
+                        onValueChange={(value) =>
+                          handleInputChange("gender", value)
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select gender" />
@@ -298,7 +420,9 @@ export default function ListPet() {
                       <Label>City</Label>
                       <Select
                         value={formData.city}
-                        onValueChange={(value) => handleInputChange("city", value)}
+                        onValueChange={(value) =>
+                          handleInputChange("city", value)
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select city" />
@@ -320,16 +444,22 @@ export default function ListPet() {
                     <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
                         checked={formData.vaccinated}
-                        onCheckedChange={(checked) => handleInputChange("vaccinated", checked === true)}
+                        onCheckedChange={(checked) =>
+                          handleInputChange("vaccinated", checked === true)
+                        }
                       />
                       <span className="text-sm font-medium">Vaccinated</span>
                     </label>
                     <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
                         checked={formData.neutered}
-                        onCheckedChange={(checked) => handleInputChange("neutered", checked === true)}
+                        onCheckedChange={(checked) =>
+                          handleInputChange("neutered", checked === true)
+                        }
                       />
-                      <span className="text-sm font-medium">Neutered/Spayed</span>
+                      <span className="text-sm font-medium">
+                        Neutered/Spayed
+                      </span>
                     </label>
                   </div>
                 </div>
@@ -342,27 +472,37 @@ export default function ListPet() {
                     Upload Photos
                   </h2>
                   <p className="text-muted-foreground mb-4">
-                    Add up to 5 photos of your pet. Good photos significantly increase adoption chances!
+                    Add up to 5 photos of your pet. Good photos significantly
+                    increase adoption chances!
                   </p>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     {previewImages.map((img, index) => (
-                      <div key={index} className="relative aspect-square rounded-xl overflow-hidden border-2 border-primary">
-                        <img src={img} alt={`Pet ${index + 1}`} className="w-full h-full object-cover" />
+                      <div
+                        key={index}
+                        className="relative aspect-square rounded-xl overflow-hidden border-2 border-primary"
+                      >
+                        <img
+                          src={img}
+                          alt={`Pet ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
                         <button
                           type="button"
-                          onClick={() => setPreviewImages(prev => prev.filter((_, i) => i !== index))}
+                          onClick={() => removeImage(index)}
                           className="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full"
                         >
                           <Check className="h-3 w-3" />
                         </button>
                       </div>
                     ))}
-                    
+
                     {previewImages.length < 5 && (
                       <label className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary hover:bg-primary-light transition-colors cursor-pointer flex flex-col items-center justify-center gap-2">
                         <Upload className="h-8 w-8 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">Add Photo</span>
+                        <span className="text-sm text-muted-foreground">
+                          Add Photo
+                        </span>
                         <input
                           type="file"
                           accept="image/*"
@@ -387,10 +527,12 @@ export default function ListPet() {
                     <Label htmlFor="description">Pet's Story</Label>
                     <Textarea
                       id="description"
-                      placeholder="Tell potential adopters about this pet's background, how they were rescued, and what makes them special..."
+                      placeholder="Tell potential adopters about this pet's background..."
                       rows={4}
                       value={formData.description}
-                      onChange={(e) => handleInputChange("description", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("description", e.target.value)
+                      }
                       required
                     />
                   </div>
@@ -399,9 +541,11 @@ export default function ListPet() {
                     <Label htmlFor="personality">Personality Traits</Label>
                     <Input
                       id="personality"
-                      placeholder="e.g., Playful, Calm, Friendly, Curious (comma separated)"
+                      placeholder="e.g., Playful, Calm, Friendly (comma separated)"
                       value={formData.personality}
-                      onChange={(e) => handleInputChange("personality", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("personality", e.target.value)
+                      }
                     />
                   </div>
 
@@ -409,10 +553,12 @@ export default function ListPet() {
                     <Label htmlFor="healthNotes">Health Notes</Label>
                     <Textarea
                       id="healthNotes"
-                      placeholder="Any medical history, vaccination details, or special needs..."
+                      placeholder="Any medical history, vaccination details..."
                       rows={3}
                       value={formData.healthNotes}
-                      onChange={(e) => handleInputChange("healthNotes", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("healthNotes", e.target.value)
+                      }
                     />
                   </div>
                 </div>
@@ -432,17 +578,23 @@ export default function ListPet() {
                         id="contactName"
                         placeholder="Full name"
                         value={formData.contactName}
-                        onChange={(e) => handleInputChange("contactName", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("contactName", e.target.value)
+                        }
                         required
                       />
                     </div>
                     <div>
-                      <Label htmlFor="organization">Organization (Optional)</Label>
+                      <Label htmlFor="organization">
+                        Organization (Optional)
+                      </Label>
                       <Input
                         id="organization"
                         placeholder="NGO or Rescue name"
                         value={formData.organization}
-                        onChange={(e) => handleInputChange("organization", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("organization", e.target.value)
+                        }
                       />
                     </div>
                   </div>
@@ -455,7 +607,9 @@ export default function ListPet() {
                         type="tel"
                         placeholder="+91 98765 43210"
                         value={formData.contactPhone}
-                        onChange={(e) => handleInputChange("contactPhone", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("contactPhone", e.target.value)
+                        }
                         required
                       />
                     </div>
@@ -466,15 +620,23 @@ export default function ListPet() {
                         type="email"
                         placeholder="you@example.com"
                         value={formData.contactEmail}
-                        onChange={(e) => handleInputChange("contactEmail", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("contactEmail", e.target.value)
+                        }
                         required
                       />
                     </div>
                   </div>
 
-                  <div className="p-4 bg-primary-light rounded-xl">
-                    <p className="text-sm text-primary">
-                      <strong>Note:</strong> Your contact information will only be shared with verified potential adopters after they submit an adoption request.
+                  {/* Warning about missing contact columns in DB */}
+                  <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-200">
+                    <p className="text-sm text-yellow-800">
+                      <strong>Dev Note:</strong> Ensure your Supabase{" "}
+                      <code>pets</code> table has columns for contact info
+                      (e.g., <code>contact_phone</code>,{" "}
+                      <code>contact_email</code>) if you want to query them
+                      later. Currently, only Name is saved to{" "}
+                      <code>listed_by</code>.
                     </p>
                   </div>
                 </div>
@@ -486,22 +648,31 @@ export default function ListPet() {
                   type="button"
                   variant="ghost"
                   onClick={prevStep}
-                  disabled={currentStep === 1}
+                  disabled={currentStep === 1 || isLoading}
                   className="gap-2"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
-                
+
                 {currentStep < 4 ? (
                   <Button type="button" onClick={nextStep} className="gap-2">
                     Next
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 ) : (
-                  <Button type="submit" className="gap-2">
-                    Submit Listing
-                    <Check className="h-4 w-4" />
+                  <Button type="submit" disabled={isLoading} className="gap-2">
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        Submit Listing
+                        <Check className="h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                 )}
               </div>

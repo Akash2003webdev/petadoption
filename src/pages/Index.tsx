@@ -36,6 +36,8 @@ export default function Index() {
   const featuredPets = pets.slice(0, 6);
 
   const nextTestimonial = () => {
+
+    
     setCurrentTestimonial((prev) => (prev + 1) % testimonials.length);
   };
 
