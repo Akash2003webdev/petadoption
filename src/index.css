@@ -1,8 +1,7 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
 
 /* PawAdopt Design System - Warm, Emotional, Trustworthy */
 
@@ -54,10 +53,27 @@
     --gold: 40 85% 55%;
 
     /* Gradients */
-    --gradient-hero: linear-gradient(135deg, hsl(40 35% 97%) 0%, hsl(150 30% 95%) 50%, hsl(40 30% 96%) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(40 35% 99%) 0%, hsl(40 30% 97%) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(150 25% 42%) 0%, hsl(150 30% 50%) 100%);
-    --gradient-warm: linear-gradient(135deg, hsl(15 70% 55%) 0%, hsl(25 75% 60%) 100%);
+    --gradient-hero: linear-gradient(
+      135deg,
+      hsl(40 35% 97%) 0%,
+      hsl(150 30% 95%) 50%,
+      hsl(40 30% 96%) 100%
+    );
+    --gradient-card: linear-gradient(
+      180deg,
+      hsl(40 35% 99%) 0%,
+      hsl(40 30% 97%) 100%
+    );
+    --gradient-accent: linear-gradient(
+      135deg,
+      hsl(150 25% 42%) 0%,
+      hsl(150 30% 50%) 100%
+    );
+    --gradient-warm: linear-gradient(
+      135deg,
+      hsl(15 70% 55%) 0%,
+      hsl(25 75% 60%) 100%
+    );
 
     /* Shadows */
     --shadow-sm: 0 2px 8px -2px hsl(25 35% 15% / 0.06);
@@ -114,8 +130,17 @@
     --terracotta-light: 15 35% 18%;
     --gold: 40 80% 55%;
 
-    --gradient-hero: linear-gradient(135deg, hsl(25 30% 8%) 0%, hsl(25 25% 12%) 50%, hsl(25 30% 10%) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(25 28% 12%) 0%, hsl(25 25% 10%) 100%);
+    --gradient-hero: linear-gradient(
+      135deg,
+      hsl(25 30% 8%) 0%,
+      hsl(25 25% 12%) 50%,
+      hsl(25 30% 10%) 100%
+    );
+    --gradient-card: linear-gradient(
+      180deg,
+      hsl(25 28% 12%) 0%,
+      hsl(25 25% 10%) 100%
+    );
 
     --destructive: 0 62% 30%;
     --destructive-foreground: 0 0% 98%;
@@ -144,7 +169,12 @@
     @apply bg-background text-foreground font-sans antialiased;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply font-display;
   }
 }
